@@ -1,0 +1,126 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-10-08"
+---
+
+```{r}
+rm(list = ls())
+gc()
+CellRatioPlot <- function(object = NULL,
+                          sample.name = NULL,
+                          celltype.name = NULL,
+                          col.width = 0.7,
+                          flow.alpha = 0.25,
+                          flow.curve = 0.1,
+                          fill.col = NULL){
+  # get metainfo
+  meta <- object
+  
+  # calculate percent ratio
+  ratio.info <- meta %>%
+    dplyr::group_by(.data[[sample.name]],.data[[celltype.name]]) %>%
+    dplyr::summarise(num = n()) %>%
+    dplyr::mutate(rel_num = num/sum(num))
+  
+  # color
+  if(is.null(fill.col)){
+    fill.col <- mycolor[1:length(unique(meta[,celltype.name]))]
+  }else{
+    fill.col <- fill.col
+  }
+  
+  # plot
+  p <-
+    ggplot2::ggplot(ratio.info,
+                    ggplot2::aes_string(x = sample.name,y = "rel_num")) +
+    ggplot2::geom_col(ggplot2::aes_string(fill = celltype.name),
+                      width = col.width) +
+    ggalluvial::geom_flow(ggplot2::aes_string(stratum = celltype.name,
+                                              alluvium = celltype.name,
+                                              fill = celltype.name),
+                          width = 0.5,
+                          alpha = flow.alpha,
+                          knot.pos = flow.curve) +
+    ggplot2::theme_bw() +
+    ggplot2::coord_cartesian(expand = 0) +
+    ggplot2::scale_y_continuous(labels = scales::label_percent()) +
+    ggplot2::scale_fill_manual(values = fill.col,
+                               name = "Cell Type") +
+    ggplot2::theme(panel.grid = ggplot2::element_blank(),
+                   axis.text = ggplot2::element_text(size = ggplot2::rel(1.2),color = 'black'),
+                   axis.title = ggplot2::element_text(size = ggplot2::rel(1.5),color = 'black'),
+                   legend.text = ggplot2::element_text(size = ggplot2::rel(1.2),color = 'black'),
+                   legend.title = ggplot2::element_text(size = ggplot2::rel(1.5),color = 'black')) +
+    ggplot2::xlab('') + ggplot2::ylab('Cell percent ratio')
+  
+  return(p)
+}
+```
+
+```{r}
+library(tidyverse)
+library(readr)
+library(jjAnno)
+
+library(readr)
+meta_data <- read_csv("../data/adata_obs.csv")
+dput(unique(meta_data$final_celltype))
+
+ov_palette =c('#1f577b', '#a56ba7', '#e0a7c8', '#e069a6', '#941456', '#fcbc10',
+       #'#ef7b77', '#279ad7', '#f0eef0', '#eaefc5', '#7cbb5f', '#368650',
+       '#a499cc', '#5e4d9a', '#78c2ed', '#866017', '#9f987f', '#e0dfed',
+       '#01a0a7')
+
+
+ratio.info <- meta_data %>%
+    dplyr::group_by(.data[["group"]],.data[["final_celltype"]]) %>%
+    dplyr::summarise(num = n()) %>%
+    dplyr::mutate(rel_num = num/sum(num))
+
+write.csv(ratio.info,file = "./output/ratio.info.csv")
+
+colnames(meta_data)
+dput(unique(meta_data$final_celltype))
+
+
+meta_data <- meta_data%>%filter(final_celltype%in%c("CD4T_c02-LEF1", 
+                                                    "CD4T_c03-ITM2A", 
+                                                    "CD4T_c04-GNLY", 
+                                                    "CD4T_c05-FOXP3", 
+                                                    "CD4T_c01-GATA3", 
+                                                    "CD8T_c01-CMC1-GZMK", 
+                                                    "CD8T_c02-GNLY-ITGB1", 
+                                                    "CD8T_c03-KLRB1-SLC4A10", 
+                                                    "CD8T_c04-LEF1-CCR7", 
+                                                    "CD8T_c05-GNLY-KLRF1"))
+CellRatioPlot(object = meta_data,
+              sample.name = "group",
+              celltype.name = "final_celltype",flow.curve = 0.4,
+              fill.col = ov_palette
+            )
+sum(ratio.info$rel_num)
+
+dev.copy2pdf(file = "./output/CellRatioPlot.pdf",width = 6,height = 6)
+```
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
