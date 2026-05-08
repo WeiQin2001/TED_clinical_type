@@ -1,0 +1,477 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-09-07"
+---
+```{r}
+rm(list = ls())
+gc()
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(ggVolcano)
+library(easySCFr)
+library(Seurat)
+
+adata <- loadH5("../data/adata_PBMC_metacell.h5",
+                calData = FALSE,calScale = FALSE,calFeatures = FALSE)
+counts_mat <- GetAssayData(adata, slot = "counts", assay = "RNA")
+adata <- SetAssayData(adata, slot = "data", new.data = counts_mat, assay = "RNA")
+adata
+
+Idents(adata) <- adata$celltype
+adata@assays$RNA$counts
+meta_data <- adata@meta.data
+dput(levels(adata$celltype))
+```
+
+###############################Type_I
+```{r}
+adata_type_I_HC <- subset(adata, idents = c(
+       'CD4T_c01-GATA3-HC','CD4T_c01-GATA3-TED_typeI', 
+       'CD4T_c02-LEF1-HC', 'CD4T_c02-LEF1-TED_typeI',
+       'CD4T_c03-ITM2A-HC','CD4T_c03-ITM2A-TED_typeI', 
+       'CD4T_c04-GNLY-HC', 'CD4T_c04-GNLY-TED_typeI',
+       'CD4T_c05-FOXP3-HC', 'CD4T_c05-FOXP3-TED_typeI', 
+       'CD8T_c01-CMC1-GZMK-HC', 'CD8T_c01-CMC1-GZMK-TED_typeI',
+       'CD8T_c02-GNLY-ITGB1 -HC', 'CD8T_c02-GNLY-ITGB1 -TED_typeI', 
+       'CD8T_c03-KLRB1-SLC4A10-HC', 'CD8T_c03-KLRB1-SLC4A10-TED_typeI',
+       'CD8T_c04-LEF1-CCR7-HC', 'CD8T_c04-LEF1-CCR7-TED_typeI', 
+       'CD8T_c05-GNLY-KLRF1-TED_typeI', 
+       'NK_c01-CD56dim-CD16hi-HC', 'NK_c01-CD56dim-CD16hi-TED_typeI',
+       'NK_c02-CD56bright-CD16lo -HC','NK_c02-CD56bright-CD16lo -TED_typeI',
+       'γδ T-HC', 'γδ T-TED_typeI'),
+        do.clean = TRUE)
+
+adata_type_I_HC
+
+deg_type_I_HC <- FindMarkers(adata_type_I_HC,
+                             ident.1 = c('CD4T_c01-GATA3-TED_typeI',
+                                 'CD4T_c02-LEF1-TED_typeI',
+                                 'CD4T_c03-ITM2A-TED_typeI',
+                                 'CD4T_c04-GNLY-TED_typeI', 
+                                 'CD4T_c05-FOXP3-TED_typeI',
+                                 'CD8T_c01-CMC1-GZMK-TED_typeI',
+                                 'CD8T_c02-GNLY-ITGB1 -TED_typeI',
+                                 'CD8T_c03-KLRB1-SLC4A10-TED_typeI',
+                                 'CD8T_c04-LEF1-CCR7-TED_typeI',
+                                 'CD8T_c05-GNLY-KLRF1-TED_typeI',
+                                 'NK_c01-CD56dim-CD16hi-TED_typeI',
+                                 'NK_c02-CD56bright-CD16lo -TED_typeI',
+                                 'γδ T-TED_typeI'),
+                             ident.2 = c('CD4T_c01-GATA3-HC',
+                                      'CD4T_c02-LEF1-HC',
+                                      'CD4T_c03-ITM2A-HC',
+                                      'CD4T_c04-GNLY-HC', 
+                                      'CD4T_c05-FOXP3-HC',
+                                      'CD8T_c01-CMC1-GZMK-HC',
+                                      'CD8T_c02-GNLY-ITGB1 -HC',
+                                      'CD8T_c03-KLRB1-SLC4A10-HC',
+                                      'CD8T_c04-LEF1-CCR7-HC',
+                                      'NK_c01-CD56dim-CD16hi-HC',
+                                      'NK_c02-CD56bright-CD16lo -HC',
+                                      'γδ T-HC'),
+                     verbose = FALSE, test.use = 'wilcox'
+                     )
+deg_type_I_HC$gene_name <- rownames(deg_type_I_HC)
+deg_type_I_HC
+
+write.csv(deg_type_I_HC,file = "output/deg_type_I_HC.csv")
+```
+
+```{r volcano}
+colnames(deg_type_I_HC)
+volcano_type_I_HC <- add_regulate(deg_type_I_HC, 
+                     log2FC_name = "avg_log2FC",
+                     fdr_name = "p_val",
+                     log2FC = 1, 
+                     fdr = 0.05)
+table(volcano_type_I_HC$regulate)
+
+gradual_volcano(volcano_type_I_HC, 
+                x = "log2FoldChange", 
+                y = "padj",
+                label = "gene_name", 
+                label_number = 0, 
+                pointSizeRange = c(0.7, 6),
+                output = FALSE)
+dev.copy2pdf(file = "output/gradual_volcano_type_I_HC.pdf",width = 6,height = 4)
+```
+
+```{r ORA_GSEA}
+gene_annotation <- bitr(deg_type_I_HC$gene_name, 
+                        fromType = "SYMBOL", 
+                        toType = "ENTREZID",
+                        OrgDb = "org.Hs.eg.db")
+enrichment_data <- deg_type_I_HC %>%
+  dplyr::select(SYMBOL = gene_name,
+                logFC = avg_log2FC,
+                p_val) %>%
+  inner_join(gene_annotation,"SYMBOL") %>%
+  na.omit()
+
+#ORA_data
+diff_gene <- enrichment_data%>%filter(abs(logFC)>1,p_val<0.05)
+diff_gene <- diff_gene$ENTREZID
+head(diff_gene)
+
+#GSEA_data
+geneList <- enrichment_data$logFC
+names(geneList) = enrichment_data$ENTREZID
+geneList = sort(geneList, decreasing = TRUE)
+head(geneList)
+
+##############ORA##############
+#####ORA_GO#####
+ego <- enrichGO(
+  gene = diff_gene,
+  OrgDb = org.Hs.eg.db,
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 1,
+  qvalueCutoff = 1,
+  readable = TRUE)
+dim(ego)
+ego_result <- ego@result
+write.csv(ego_result,file = "output/GO_result_type_I_HC.csv")
+
+#####ORA_KEGG#####
+kegg <- enrichKEGG(gene = diff_gene,
+                   organism = 'hsa',
+                   pvalueCutoff = 1,
+                   pAdjustMethod = "BH",
+                   qvalueCutoff =1)
+head(kegg)
+kegg <- setReadable(kegg, 'org.Hs.eg.db', 'ENTREZID')
+kegg_result <- kegg@result
+write.csv(kegg_result,file = "output/kegg_result_type_I_HC.csv")
+
+##############GSEA##############
+#####GO#####
+set.seed(123)
+gse_go <- gseGO(geneList   = geneList,
+                OrgDb      = org.Hs.eg.db,
+                ont        = "ALL",
+                pvalueCutoff = 1,
+                verbose      = FALSE)
+gse_go_result <- gse_go@result
+write.csv(gse_go_result,file = "output/gse_go_result_type_I_HC.csv")
+gse_go_result <- gse_go_result%>%filter(pvalue < 0.05)
+dim(gse_go_result)
+
+#####KEGG#####
+set.seed(123)
+gse_kegg <- gseKEGG(geneList = geneList,
+                   organism     = 'hsa',
+                   pvalueCutoff = 1,
+                   verbose      = FALSE,
+                   pAdjustMethod = "BH")
+head(gse_kegg)
+gse_kegg <- setReadable(gse_kegg, 'org.Hs.eg.db', 'ENTREZID')
+gse_kegg_result <- gse_kegg@result
+write.csv(gse_kegg_result,file = "output/gse_kegg_result_type_I_HC.csv")
+gse_kegg_result <- gse_kegg_result%>%filter(pvalue < 0.05)
+dim(gse_kegg_result)
+```
+
+```{r Visualization of Enrichment Analysis}
+library(readr)
+ego_result <- read_csv("output/GO_result_type_I_HC.csv")
+kegg_result <- read_csv("output/kegg_result_type_I_HC.csv")
+
+#GO
+mytheme <- theme(axis.title = element_text(size = 13),
+                 axis.text = element_text(size = 11),
+                 plot.title = element_text(size = 14, hjust = 0.5, face = "bold"),
+                 legend.title = element_text(size = 13),
+                 legend.text = element_text(size = 11))
+colnames(ego_result)
+
+str(ego_result)
+ego_result$GeneRatio <- ego_result$Count/91
+ego_result <- ego_result%>%arrange(pvalue)
+ego_result_top15 <- ego_result[1:10,]
+
+ego_result_top15 <- ego_result_top15%>%
+                    arrange(GeneRatio)
+  
+  
+ego_result_top15$Description <- factor(ego_result_top15$Description,
+                                       levels = ego_result_top15$Description)
+str(ego_result_top15)
+colnames(ego_result_top15)
+
+ggplot(data = ego_result_top15,
+       aes(x = GeneRatio, y = Description)) +
+       geom_point(aes(size = Count, color = pvalue))+
+       scale_color_distiller(palette = "Spectral",direction = -1) +
+       theme_bw() +
+       mytheme
+dev.copy2pdf(file = "output/GO_top10_type_I_HC(气泡图).pdf",width =6,height = 4)
+
+#kegg
+kegg_result <- kegg_result%>%
+               slice_head(n = 10) %>% arrange(desc(pvalue))
+ratio <- lapply(kegg_result$GeneRatio,
+                function(x){as.numeric(eval(parse(text = x)))}) %>% unlist()
+kegg_result$ratio <- ratio
+
+kegg_result$Description <- factor(kegg_result$Description,
+                                  levels = kegg_result$Description)
+
+ggplot(kegg_result) +
+  ggforce::geom_link(aes(x = 0,
+                         y = Description,
+                         xend = -log10(pvalue),
+                         yend = Description,
+                         alpha = after_stat(index),
+                         color = -log10(pvalue),
+                         linewidth = after_stat(index)),
+                         n = 500,
+                         show.legend = F) +
+  scale_color_distiller(palette = "Spectral",direction = -1)+
+  geom_point(aes(x = -log10(pvalue),y = Description),
+             color = "black",
+             fill = "white",size = 6,shape = 21) +
+  theme_bw() +
+  ylab("") + xlab("-log10 Pvalue") +
+  mytheme
+
+dev.copy2pdf(file = "output/kegg_top10_type_I_HC(流星图).pdf",width =6,height = 6)
+
+```
+
+###############################Type_II
+```{r }
+adata_type_II_HC <- subset(adata, idents = c(
+       'CD4T_c01-GATA3-HC','CD4T_c01-GATA3-TED_typeII', 
+       'CD4T_c02-LEF1-HC', 'CD4T_c02-LEF1-TED_typeII',
+       'CD4T_c03-ITM2A-HC','CD4T_c03-ITM2A-TED_typeII', 
+       'CD4T_c04-GNLY-HC', 'CD4T_c04-GNLY-TED_typeII',
+       'CD4T_c05-FOXP3-HC', 'CD4T_c05-FOXP3-TED_typeII', 
+       'CD8T_c01-CMC1-GZMK-HC', 'CD8T_c01-CMC1-GZMK-TED_typeII',
+       'CD8T_c02-GNLY-ITGB1 -HC', 'CD8T_c02-GNLY-ITGB1 -TED_typeII', 
+       'CD8T_c03-KLRB1-SLC4A10-HC', 'CD8T_c03-KLRB1-SLC4A10-TED_typeII',
+       'CD8T_c04-LEF1-CCR7-HC', 'CD8T_c04-LEF1-CCR7-TED_typeII', 
+       'CD8T_c05-GNLY-KLRF1-TED_typeII', 
+       'NK_c01-CD56dim-CD16hi-HC', 'NK_c01-CD56dim-CD16hi-TED_typeII',
+       'NK_c02-CD56bright-CD16lo -HC','NK_c02-CD56bright-CD16lo -TED_typeII',
+       'γδ T-HC', 'γδ T-TED_typeII'),
+        do.clean = TRUE)
+
+adata_type_II_HC
+
+deg_type_II_HC <- FindMarkers(adata_type_II_HC,
+                     ident.1 = c('CD4T_c01-GATA3-TED_typeII',
+                                 'CD4T_c02-LEF1-TED_typeII',
+                                 'CD4T_c03-ITM2A-TED_typeII',
+                                 'CD4T_c04-GNLY-TED_typeII', 
+                                 'CD4T_c05-FOXP3-TED_typeII',
+                                 'CD8T_c01-CMC1-GZMK-TED_typeII',
+                                 'CD8T_c02-GNLY-ITGB1 -TED_typeII',
+                                 'CD8T_c03-KLRB1-SLC4A10-TED_typeII',
+                                 'CD8T_c04-LEF1-CCR7-TED_typeII',
+                                 'CD8T_c05-GNLY-KLRF1-TED_typeII',
+                                 'NK_c01-CD56dim-CD16hi-TED_typeII',
+                                 'NK_c02-CD56bright-CD16lo -TED_typeII',
+                                 'γδ T-TED_typeII'),
+                             ident.2 = c('CD4T_c01-GATA3-HC',
+                                      'CD4T_c02-LEF1-HC',
+                                      'CD4T_c03-ITM2A-HC',
+                                      'CD4T_c04-GNLY-HC', 
+                                      'CD4T_c05-FOXP3-HC',
+                                      'CD8T_c01-CMC1-GZMK-HC',
+                                      'CD8T_c02-GNLY-ITGB1 -HC',
+                                      'CD8T_c03-KLRB1-SLC4A10-HC',
+                                      'CD8T_c04-LEF1-CCR7-HC',
+                                      'NK_c01-CD56dim-CD16hi-HC',
+                                      'NK_c02-CD56bright-CD16lo -HC',
+                                      'γδ T-HC'),
+                     verbose = FALSE, test.use = 'wilcox',
+                     )
+deg_type_II_HC$gene_name <- rownames(deg_type_II_HC)
+deg_type_II_HC
+write.csv(deg_type_II_HC,file = "output/deg_type_II_HC.csv")
+```
+
+```{r volcano}
+colnames(deg_type_II_HC)
+data_type_II_HC <- add_regulate(deg_type_II_HC, 
+                     log2FC_name = "avg_log2FC",
+                     fdr_name = "p_val",
+                     log2FC = 1, 
+                     fdr = 0.05)
+table(data_type_II_HC$regulate)
+
+gradual_volcano(data_type_II_HC, 
+                x = "log2FoldChange", 
+                y = "padj",
+                label = "gene_name", 
+                label_number = 0, 
+                pointSizeRange = c(0.7, 6),
+                output = FALSE)
+
+dev.copy2pdf(file = "output/gradual_volcano_type_II_HC.pdf",width = 6,height = 4)
+```
+
+```{r ORA_GSEA}
+gene_annotation <- bitr(deg_type_II_HC$gene_name, 
+                        fromType = "SYMBOL", 
+                        toType = "ENTREZID",
+                        OrgDb = "org.Hs.eg.db")
+enrichment_data <- deg_type_II_HC %>%
+  dplyr::select(SYMBOL = gene_name,
+                logFC = avg_log2FC,
+                p_val) %>%
+  inner_join(gene_annotation,"SYMBOL") %>%
+  na.omit()
+
+#ORA_data
+diff_gene <- enrichment_data%>%filter(abs(logFC)>1,p_val<0.05)
+diff_gene <- diff_gene$ENTREZID
+#GSEA_data
+geneList <- enrichment_data$logFC
+names(geneList) = enrichment_data$ENTREZID
+geneList = sort(geneList, decreasing = TRUE)
+head(geneList)
+
+##############ORA##############
+#####GO#####
+ego <- enrichGO(
+  gene = diff_gene,
+  OrgDb = org.Hs.eg.db,
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 1,
+  qvalueCutoff = 1,
+  readable = TRUE)
+dim(ego)
+ego_result <- ego@result
+write.csv(ego_result,file = "output/GO_result_type_II_HC.csv")
+
+#####KEGG#####
+kegg <- enrichKEGG(gene = diff_gene,
+                   organism = 'hsa',
+                   pvalueCutoff = 1,
+                   pAdjustMethod = "BH",
+                   qvalueCutoff =1)
+head(kegg)
+
+kegg <- setReadable(kegg, 'org.Hs.eg.db', 'ENTREZID')
+kegg_result <- kegg@result
+write.csv(kegg_result,file = "output/kegg_result_type_II_HC.csv")
+
+##############GSEA##############
+#####GO#####
+set.seed(123)
+gse_go <- gseGO(geneList   = geneList,
+                OrgDb      = org.Hs.eg.db,
+                ont        = "ALL",
+                pvalueCutoff = 1,
+                verbose      = FALSE)
+
+gse_go_result <- gse_go@result
+write.csv(gse_go_result,file = "output/gse_go_result_type_II_HC.csv")
+gse_go_result <- gse_go_result%>%filter(pvalue < 0.05)
+dim(gse_go_result)
+
+#####KEGG#####
+set.seed(123)
+gse_kegg <- gseKEGG(geneList = geneList,
+                   organism     = 'hsa',
+                   pvalueCutoff = 1,
+                   verbose      = FALSE,
+                   pAdjustMethod = "BH")
+head(gse_kegg)
+gse_kegg <- setReadable(gse_kegg, 'org.Hs.eg.db', 'ENTREZID')
+
+gse_kegg_result <- gse_kegg@result
+write.csv(gse_kegg_result,file = "output/gse_kegg_result_type_II_HC.csv")
+gse_kegg_result <- gse_kegg_result%>%filter(pvalue < 0.05)
+dim(gse_kegg_result)
+```
+
+```{r Visualization of Enrichment Analysis}
+library(readr)
+ego_result <- read_csv("output/GO_result_type_II_HC.csv")
+kegg_result <- read_csv("output/kegg_result_type_II_HC.csv")
+
+#GO
+mytheme <- theme(axis.title = element_text(size = 13),
+                 axis.text = element_text(size = 11),
+                 plot.title = element_text(size = 14, hjust = 0.5, face = "bold"),
+                 legend.title = element_text(size = 13),
+                 legend.text = element_text(size = 11))
+colnames(ego_result)
+
+str(ego_result)
+ego_result$GeneRatio <- ego_result$Count/265
+ego_result <- ego_result%>%arrange(pvalue)
+ego_result_top15 <- ego_result[1:10,]#
+
+ego_result_top15 <- ego_result_top15%>%
+                    arrange(GeneRatio)
+
+ego_result_top15$Description <- factor(ego_result_top15$Description,
+                                       levels = ego_result_top15$Description)
+str(ego_result_top15)
+colnames(ego_result_top15)
+
+ggplot(data = ego_result_top15,
+       aes(x = GeneRatio, y = Description)) +
+       geom_point(aes(size = Count, color = pvalue))+
+       scale_color_distiller(palette = "Spectral",direction = -1) +
+       theme_bw() +
+       mytheme
+dev.copy2pdf(file = "output/GO_top10_type_II_HC(气泡图).pdf",width =6.55,height = 3.5)
+
+#kegg
+kegg_result <- kegg_result%>%
+               slice_head(n = 10) %>% arrange(desc(pvalue))
+ratio <- lapply(kegg_result$GeneRatio,
+                function(x){as.numeric(eval(parse(text = x)))}) %>% unlist()
+kegg_result$ratio <- ratio
+
+kegg_result$Description <- factor(kegg_result$Description,
+                                  levels = kegg_result$Description)
+
+ggplot(kegg_result) +
+  ggforce::geom_link(aes(x = 0,
+                         y = Description,
+                         xend = -log10(pvalue),
+                         yend = Description,
+                         alpha = after_stat(index),
+                         color = -log10(pvalue),
+                         linewidth = after_stat(index)),
+                         n = 500,
+                         show.legend = F) +
+  scale_color_distiller(palette = "Spectral",direction = -1)+
+  geom_point(aes(x = -log10(pvalue),y = Description),
+             color = "black",
+             fill = "white",size = 6,shape = 21) +
+  theme_bw() +
+  ylab("") + xlab("-log10 Pvalue") +
+  mytheme
+
+dev.copy2pdf(file = "output/kegg_top10_type_II_HC(流星图).pdf",width =5.5,height = 5.9)
+```
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
