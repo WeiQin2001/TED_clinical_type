@@ -1,0 +1,101 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-06-25"
+---
+```{r  Roe}
+rm(list = ls())
+gc()
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+source("./source_R/custom_seurat_functions.R")
+if(T){
+  text.size = 12
+  text.angle = 45
+  text.hjust = 1
+  legend.position = "right"
+  mytheme <- theme(plot.title = element_text(size = text.size+2,color="black",hjust = 0.5),
+                   axis.ticks = element_line(color = "black"),
+                   axis.title = element_text(size = text.size,color ="black"), 
+                   axis.text = element_text(size=text.size,color = "black"),
+                   axis.text.x = element_text(angle = text.angle, hjust = text.hjust ), #,vjust = 0.5
+                   panel.grid=element_blank(), 
+                   legend.position = legend.position,
+                   legend.text = element_text(size= text.size),
+                   legend.title= element_text(size= text.size)
+  )
+}
+
+library(readr)
+meta_data <- read_csv("../data/adata_obs.csv")
+dput(unique(meta_data$final_celltype))
+
+meta_data <- meta_data%>%filter(final_celltype%in%c("CD4T_c02-LEF1", 
+                                                    "CD4T_c03-ITM2A", 
+                                                    "CD4T_c04-GNLY", 
+                                                    "CD4T_c05-FOXP3", 
+                                                    "CD4T_c01-GATA3", 
+                                                    "CD8T_c01-CMC1-GZMK", 
+                                                    "CD8T_c02-GNLY-ITGB1", 
+                                                    "CD8T_c03-KLRB1-SLC4A10", 
+                                                    "CD8T_c04-LEF1-CCR7", 
+                                                    "CD8T_c05-GNLY-KLRF1"))
+meta_data$final_celltype <- factor(meta_data$final_celltype,
+                                   levels = c("CD4T_c02-LEF1", 
+                                                    "CD4T_c03-ITM2A", 
+                                                    "CD4T_c04-GNLY", 
+                                                    "CD4T_c05-FOXP3", 
+                                                    "CD4T_c01-GATA3", 
+                                                    "CD8T_c01-CMC1-GZMK", 
+                                                    "CD8T_c02-GNLY-ITGB1", 
+                                                    "CD8T_c03-KLRB1-SLC4A10", 
+                                                    "CD8T_c04-LEF1-CCR7", 
+                                                    "CD8T_c05-GNLY-KLRF1"))
+table(meta_data$final_celltype)
+str(meta_data)
+
+library(jjAnno)
+useMyCol(showAll = TRUE)
+jjAnno::useMyCol('zissou',5)
+
+options(repr.plot.width = 11, repr.plot.height = 3.8)
+p7 = gg.tissueDist(cellInfo.tb = meta_data,
+                   meta.cluster = meta_data$final_celltype,
+                   colname.patient = "sample",
+                   loc = meta_data$group,
+                   cuts =c(0.0000000, 0.0000001, 0.8, 1.5, 2, Inf),
+                   bin.label = c("-", "+/-", "+", "++", "+++"),
+                   verbose = 1,
+                   z.hi.OR = 4,
+                   z.hi.ROE = 2,
+                   text.size = 12,
+                   text_color = paletteer::paletteer_d('ggsci::category20c_d3')
+)
+
+dev.copy2pdf(file = "./output/Roe_pbmc_select.pdf",width = 12.5, height = 5)
+```
+
+
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
